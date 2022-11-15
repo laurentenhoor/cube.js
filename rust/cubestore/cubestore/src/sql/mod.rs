@@ -1161,7 +1161,7 @@ impl SqlService for SqlServiceImpl {
                                         } else {
                                             // Pick one of the workers to run as main for the request.
                                             let i = 0;
-                                                //thread_rng().sample(Uniform::new(0, workers.len()));
+                                            //thread_rng().sample(Uniform::new(0, workers.len()));
                                             let rs =
                                                 cluster.route_select(&workers[i], plan).await?.1;
                                             records = rs
@@ -3625,9 +3625,9 @@ mod tests {
                     .unwrap();
                 let res = service
                     .exec_query("EXPLAIN ANALYZE SELECT id, SUM(n) FROM (
-                            SELECT * FROM foo.pushdown1 
+                            SELECT * FROM foo.pushdown1
                             union all
-                            SELECT * FROM foo.pushdown2 
+                            SELECT * FROM foo.pushdown2
                             ) as `tb` GROUP BY 1 ORDER BY 1 LIMIT 3")
                     .await
                     .unwrap();
@@ -3641,9 +3641,9 @@ mod tests {
 
                 let res = service
                     .exec_query("SELECT id, SUM(n) FROM (
-                            SELECT * FROM foo.pushdown1 
+                            SELECT * FROM foo.pushdown1
                             union all
-                            SELECT * FROM foo.pushdown2 
+                            SELECT * FROM foo.pushdown2
                             ) as `tb` GROUP BY 1 ORDER BY 1 LIMIT 3")
                     .await
                     .unwrap();
@@ -3712,9 +3712,9 @@ mod tests {
                     .unwrap();
                 let res = service
                     .exec_query("EXPLAIN ANALYZE SELECT id, n FROM (
-                            SELECT * FROM foo.pushdown1 
+                            SELECT * FROM foo.pushdown1
                             union all
-                            SELECT * FROM foo.pushdown2 
+                            SELECT * FROM foo.pushdown2
                             ) as `tb` WHERE id = 11 ORDER BY 2 LIMIT 3")
                     .await
                     .unwrap();
@@ -3729,9 +3729,9 @@ mod tests {
 
                 let res = service
                     .exec_query("SELECT id, n FROM (
-                            SELECT * FROM foo.pushdown1 
+                            SELECT * FROM foo.pushdown1
                             union all
-                            SELECT * FROM foo.pushdown2 
+                            SELECT * FROM foo.pushdown2
                             ) as `tb` WHERE id = 11 ORDER BY 2 LIMIT 3")
                     .await
                     .unwrap();
@@ -3747,7 +3747,7 @@ mod tests {
 
             })
             .await;
-    }
+    } */
 }
 
 impl SqlServiceImpl {
