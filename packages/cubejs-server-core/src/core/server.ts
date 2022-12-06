@@ -11,7 +11,7 @@ import {
   getEnv, assertDataSource, getRealType, internalExceptions, track,
 } from '@cubejs-backend/shared';
 
-import type { Application as ExpressApplication } from 'express';
+import type { Application as ExpressApplication, NextFunction } from 'express';
 
 import { BaseDriver, DriverFactoryByDataSource } from '@cubejs-backend/query-orchestrator';
 import { FileRepository, SchemaFileRepository } from './FileRepository';
@@ -57,6 +57,59 @@ function wrapToFnIfNeeded<T, R>(possibleFn: T | ((a: R) => T)): (a: R) => T {
   }
 
   return () => possibleFn;
+}
+
+type ContextAcceptanceResult = {
+  accepted: boolean;
+  rejectHeaders?: { [key: string]: string };
+  rejectStatusCode?: number;
+};
+
+class ContextAcceptor {
+  public static shouldAccept(
+    context: RequestContext,
+    contextToAppId: ContextToAppIdFn
+  ): ContextAcceptanceResult {
+    function hashCode(str: string, seed = 0) {
+      let h1 = 0xdeadbeef ^ seed;
+      let h2 = 0x41c6ce57 ^ seed;
+      for (let i = 0, ch; i < str.length; i++) {
+        ch = str.charCodeAt(i);
+        h1 = Math.imul(h1 ^ ch, 2654435761);
+        h2 = Math.imul(h2 ^ ch, 1597334677);
+      }
+
+      h1 =
+        Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^
+        Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+      h2 =
+        Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^
+        Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+
+      return 4294967296 * (2097151 & h2) + (h1 >>> 0);
+    }
+
+    const selfBucketId = parseInt(process.env.CUBE_CLOUD_API_BUCKET_ID, 10);
+    const numBuckets = parseInt(process.env.CUBE_CLOUD_API_NUM_BUCKETS, 10);
+
+    if (numBuckets > 1) {
+      const appId = contextToAppId(context);
+      const targetBucket = hashCode(appId) % numBuckets;
+      if (targetBucket !== selfBucketId) {
+        return {
+          accepted: false,
+          rejectHeaders: {
+            'X-Cube-Cloud-Route-To-Bucket': `${targetBucket}`,
+          },
+          rejectStatusCode: 421,
+        };
+      } else {
+        return { accepted: true };
+      }
+    } else {
+      return { accepted: true };
+    }
+  }
 }
 
 export class CubejsServerCore {
@@ -419,7 +472,7 @@ export class CubejsServerCore {
       return this.apiGatewayInstance;
     }
 
-    return this.apiGatewayInstance = new ApiGateway(
+    return (this.apiGatewayInstance = new ApiGateway(
       this.options.apiSecret,
       this.getCompilerApi.bind(this),
       this.getOrchestratorApi.bind(this),
@@ -429,17 +482,33 @@ export class CubejsServerCore {
         dataSourceStorage: this.orchestratorStorage,
         basePath: this.options.basePath,
         checkAuthMiddleware: this.options.checkAuthMiddleware,
+        contextRejectionMiddleware: this.contextRejectionMiddleware.bind(this),
         checkAuth: this.options.checkAuth,
-        queryRewrite: this.options.queryRewrite || this.options.queryTransformer,
+        queryRewrite:
+          this.options.queryRewrite || this.options.queryTransformer,
         extendContext: this.options.extendContext,
-        playgroundAuthSecret: getEnv('playgroundAuthSecret'),
+        playgroundAuthSecret: getEnv("playgroundAuthSecret"),
         jwt: this.options.jwt,
         refreshScheduler: () => new RefreshScheduler(this),
         scheduledRefreshContexts: this.options.scheduledRefreshContexts,
         scheduledRefreshTimeZones: this.options.scheduledRefreshTimeZones,
-        serverCoreVersion: this.coreServerVersion
+        serverCoreVersion: this.coreServerVersion,
       }
-    );
+    ));
+  }
+
+  protected async contextRejectionMiddleware(req, res, next) {
+    if (!this.standalone) {
+      const result = ContextAcceptor.shouldAccept(req.context, this.contextToAppId);
+      if (!result.accepted) {
+        res.writeHead(result.rejectStatusCode!, result.rejectHeaders!);
+        res.send();
+        return;
+      }
+    }
+    if (next) {
+      next();
+    }
   }
 
   public getCompilerApi(context: RequestContext) {
@@ -648,7 +717,13 @@ export class CubejsServerCore {
    * @internal Please dont use this method directly, use refreshTimer
    */
   public handleScheduledRefreshInterval = async (options) => {
-    const contexts = await this.options.scheduledRefreshContexts();
+    const contexts = (await this.options.scheduledRefreshContexts()).filter(
+      (context) => context === null || ContextAcceptor.shouldAccept(
+        this.migrateBackgroundContext(context)!,
+        this.contextToAppId
+      ).accepted
+    );
+    console.log(`Selected ${contexts.length} contexts for refresh`);
     if (contexts.length < 1) {
       this.logger('Refresh Scheduler Error', {
         error: 'At least one context should be returned by scheduledRefreshContexts'
