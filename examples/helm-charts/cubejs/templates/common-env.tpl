@@ -360,6 +360,14 @@ CUBEJS_REDIS_PASSWORD.
 - name: CUBEJS_DB_DATABRICKS_URL
   value: {{ .Values.database.databricks.url | quote }}
 {{- end }}
+{{- if .Values.database.databricks.token }}
+- name: CUBEJS_DB_DATABRICKS_TOKEN
+  value: {{ .Values.database.databricks.token | quote }}
+{{- end }}
+{{- if .Values.database.databricks.acceptPolicy }}
+- name: CUBEJS_DB_DATABRICKS_ACCEPT_POLICY
+  value: {{ .Values.database.databricks.acceptPolicy | quote }}
+{{- end }}
 {{- if .Values.database.ssl.enabled }}
 - name: CUBEJS_DB_SSL
   value: "true"
